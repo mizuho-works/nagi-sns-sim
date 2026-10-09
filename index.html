@@ -29,6 +29,14 @@ button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
 .tabs{display:flex;border-bottom:1px solid var(--line);margin-top:8px}
 .tab{flex:1;text-align:center;padding:12px 0;color:var(--sub);cursor:pointer;border-bottom:2px solid transparent}
 .tab.on{color:var(--fg);border-color:var(--fg);font-weight:600}
+.tabs{overflow-x:auto}
+.tab{flex:1 0 auto;padding:12px 14px;white-space:nowrap}
+.ops .item{border-top:1px solid var(--line);padding:12px 0}
+.ops h3{font-size:14px;margin:18px 0 4px}
+.ops .t{white-space:pre-wrap;margin:4px 0}
+.ops textarea,.ops input{width:100%;font:inherit;color:var(--fg);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:6px 8px;margin-top:6px}
+.ops .nums{display:grid;grid-template-columns:repeat(5,1fr);gap:4px}
+.ops .nums input{padding:6px 4px;text-align:center}
 .post{padding:16px 0;border-bottom:1px solid var(--line)}
 .meta{display:flex;gap:8px;align-items:center;color:var(--sub);font-size:12px;flex-wrap:wrap}
 .text{white-space:pre-wrap;margin:6px 0 8px;word-break:break-word}
@@ -88,6 +96,9 @@ button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
     <div class="tab" data-tab="stopped">止まっている投稿</div>
     <div class="tab" data-tab="draft">下書き</div>
     <div class="tab" data-tab="memo">体験メモ</div>
+    <div class="tab" data-tab="review">承認</div>
+    <div class="tab" data-tab="plan">予定</div>
+    <div class="tab" data-tab="stats">成績</div>
   </div>
   <div id="list"></div>
 </div>
@@ -147,6 +158,128 @@ async function sendIssue(title,body){
   if(!r.ok) throw new Error([401,403,404].includes(r.status)?"トークンが無効か、権限が足りません（"+r.status+"）":"送信に失敗しました（"+r.status+"）");
 }
 
+// ---- 承認・予定・成績（保存先は非公開メモ置き場のIssue） ----
+const STATES=["pending","approved","rejected","needs-fix","posted"];
+const STATE_JA={pending:"承認待ち",approved:"承認済み（投稿待ち）",rejected:"却下","needs-fix":"修正待ち",posted:"投稿済み"};
+async function ghApi(path,opt){
+  const t=getTok();
+  if(!t) throw new Error("先に「体験メモ」画面の「送信の設定」でトークンを入れてください");
+  const o=opt||{};
+  const r=await fetch("https://api.github.com/repos/"+ASK_REPO+path,{
+    method:o.method||"GET",
+    headers:{"Authorization":"Bearer "+t,"Accept":"application/vnd.github+json","Content-Type":"application/json"},
+    body:o.body?JSON.stringify(o.body):undefined
+  });
+  if(!r.ok) throw new Error([401,403,404].includes(r.status)?"トークンが無効か、権限が足りません（"+r.status+"）":"通信に失敗しました（"+r.status+"）");
+  return r.status===204?null:r.json();
+}
+async function createDraft(d){
+  const title="【下書き】"+[...d.text.replace(/\s+/g," ")].slice(0,24).join("");
+  await ghApi("/issues",{method:"POST",body:{title,body:JSON.stringify(d),labels:["draft","pending"]}});
+}
+async function loadDrafts(){
+  const a=await ghApi("/issues?labels=draft&state=all&per_page=100&sort=created&direction=desc");
+  return a.filter(x=>!x.pull_request).map(x=>{
+    let d={}; try{d=JSON.parse(x.body||"{}")}catch(e){}
+    const st=x.labels.map(l=>l.name).find(n=>STATES.includes(n))||"pending";
+    return {n:x.number,d,state:st,created:x.created_at};
+  });
+}
+async function setState(n,state,comment){
+  await ghApi("/issues/"+n+"/labels",{method:"PUT",body:{labels:["draft",state]}});
+  if(comment) await ghApi("/issues/"+n+"/comments",{method:"POST",body:{body:comment}});
+}
+async function patchBody(it,patch){
+  await ghApi("/issues/"+it.n,{method:"PATCH",body:{body:JSON.stringify(Object.assign({},it.d,patch))}});
+}
+const fmtS=s=>{ if(!s) return ""; const d=new Date(s); return isNaN(d)?s:d.toLocaleString("ja-JP",{month:"numeric",day:"numeric",weekday:"short",hour:"2-digit",minute:"2-digit"}); };
+const nowLocal=()=>{ const d=new Date(); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,16); };
+function head(it){ return el("div",{className:"note"},"#"+it.n+"｜"+(it.d.cat||"")+"｜"+(it.d.fm||"")+"｜"+STATE_JA[it.state]+(it.d.sched?"｜予定 "+fmtS(it.d.sched):"")); }
+function section(wrap,title,items,build){
+  wrap.append(el("h3",{},title+"（"+items.length+"）"));
+  if(!items.length){ wrap.append(el("div",{className:"note"},"なし")); return; }
+  items.forEach(it=>wrap.append(el("div",{className:"item"},head(it),el("div",{className:"t"},it.d.text||""),...build(it))));
+}
+async function renderOps(){
+  const t0=tab;
+  const list=$("#list"); list.replaceChildren();
+  const wrap=el("div",{className:"form ops"}); list.append(wrap);
+  if(!getTok()){ wrap.append(el("div",{className:"privacy"},"先に「体験メモ」画面の「送信の設定」でトークンを入れてください。")); return; }
+  wrap.append(el("div",{className:"note"},"読み込み中…"));
+  let items;
+  try{ items=await loadDrafts(); }catch(e){ if(tab===t0) wrap.replaceChildren(el("div",{className:"warn"},e.message)); return; }
+  if(tab!==t0) return;
+  wrap.replaceChildren();
+  const msg=el("div",{className:"warn"}); msg.textContent=flash; flash=""; wrap.append(msg);
+  const act=async(fn,ok)=>{ try{ await fn(); flash=ok; renderOps(); }catch(e){ msg.textContent=e.message; } };
+  if(t0==="review") viewReview(wrap,items,act);
+  else if(t0==="plan") viewPlan(wrap,items,act);
+  else viewStats(wrap,items,act,msg);
+}
+function viewReview(wrap,items,act){
+  section(wrap,"承認待ち",items.filter(i=>i.state==="pending"||i.state==="needs-fix"),it=>{
+    const cm=el("textarea",{placeholder:"コメント（修正指示・却下の理由。承認の時は空欄でOK）"}); cm.style.minHeight="48px";
+    const ok=el("button",{className:"primary sm",textContent:"承認"}),fix=el("button",{className:"sm",textContent:"修正指示"}),ng=el("button",{className:"sm",textContent:"却下"});
+    const c=()=>cm.value.trim();
+    ok.onclick=()=>act(()=>setState(it.n,"approved","【承認】"+(c()?" "+c():"")),"承認しました");
+    fix.onclick=()=>{ if(!c()){ alert("修正してほしい点を書いてください"); return; } act(()=>setState(it.n,"needs-fix","【修正指示】 "+c()),"修正指示を送りました"); };
+    ng.onclick=()=>act(()=>setState(it.n,"rejected","【却下】"+(c()?" "+c():"")),"却下しました");
+    const w=checkDraft(it.d.text||"");
+    return [...(w.length?[el("div",{className:"warn"},w.join("\n"))]:[]),cm,el("div",{className:"inline",style:"margin-top:8px"},ok,fix,ng)];
+  });
+  section(wrap,"投稿待ち（承認済み）",items.filter(i=>i.state==="approved"),it=>{
+    const when=el("input",{type:"datetime-local",value:it.d.sched||nowLocal()});
+    const cp=el("button",{className:"sm",textContent:"本文をコピー"}),done=el("button",{className:"primary sm",textContent:"投稿した"}),undo=el("button",{className:"sm",textContent:"承認を取り消す"});
+    cp.onclick=()=>copyText(it.d.text||"",cp);
+    done.onclick=()=>act(async()=>{ await patchBody(it,{postedAt:when.value}); await setState(it.n,"posted","【投稿】"+when.value); },"投稿を記録しました");
+    undo.onclick=()=>act(()=>setState(it.n,"pending","【承認取り消し】"),"承認待ちに戻しました");
+    return [el("div",{className:"note"},"投稿した日時"),when,el("div",{className:"inline",style:"margin-top:8px"},cp,done,undo)];
+  });
+  section(wrap,"最近のもの（却下・投稿済み）",items.filter(i=>i.state==="rejected"||i.state==="posted").slice(0,5),()=>[]);
+}
+function weekStart(d){ const x=new Date(d); x.setHours(0,0,0,0); x.setDate(x.getDate()-((x.getDay()+6)%7)); return x; }
+function viewPlan(wrap,items,act){
+  const planned=items.filter(i=>["pending","approved","needs-fix","posted"].includes(i.state));
+  const withS=planned.filter(i=>i.d.sched||i.d.postedAt).map(i=>Object.assign({},i,{when:new Date(i.d.postedAt||i.d.sched)})).sort((a,b)=>a.when-b.when);
+  const groups={};
+  withS.forEach(i=>{ const k=weekStart(i.when).getTime(); (groups[k]=groups[k]||[]).push(i); });
+  const keys=Object.keys(groups).sort();
+  if(!keys.length) wrap.append(el("div",{className:"note"},"予定のある下書きはまだありません"));
+  keys.forEach(k=>{
+    const g=groups[k], ws=new Date(+k), we=new Date(+k+6*86400000);
+    const real=g.filter(i=>i.state==="approved"||i.state==="posted").length;
+    const status=(real>=3&&real<=4)?"目標どおり":(real<3?"目標より少なめ（3〜4本）":"目標より多め（3〜4本）");
+    wrap.append(el("h3",{},(ws.getMonth()+1)+"/"+ws.getDate()+"〜"+(we.getMonth()+1)+"/"+we.getDate()+"｜承認・投稿済み "+real+"本｜"+status));
+    g.forEach(i=>wrap.append(el("div",{className:"item"},head(i),el("div",{className:"t"},(i.d.text||"").split("\n")[0]))));
+  });
+  section(wrap,"予定日が未設定",planned.filter(i=>!i.d.sched&&!i.d.postedAt&&i.state!=="posted"),it=>{
+    const when=el("input",{type:"datetime-local"}); const sv=el("button",{className:"sm",textContent:"予定日を保存"});
+    sv.onclick=()=>{ if(!when.value) return; act(()=>patchBody(it,{sched:when.value}),"予定日を保存しました"); };
+    return [when,el("div",{className:"inline",style:"margin-top:8px"},sv)];
+  });
+}
+async function viewStats(wrap,items,act,msg){
+  const posted=items.filter(i=>i.state==="posted");
+  if(!posted.length){ wrap.append(el("div",{className:"note"},"投稿済みの記録はまだありません。「承認」タブで「投稿した」を押すと、ここに出ます。")); return; }
+  wrap.append(el("div",{className:"note"},"投稿から1〜2日後の数字を入れてください。見える範囲でOKです。"));
+  const ids=["views","likes","replies","reposts","quotes"], labs=["閲覧","いいね","返信","再投稿","引用"];
+  for(const it of posted){
+    let comments=[]; try{ comments=await ghApi("/issues/"+it.n+"/comments?per_page=100"); }catch(e){}
+    const mets=comments.map(c=>{ const b=c.body||""; if(!b.startsWith("【成績】")) return null; try{ return JSON.parse(b.slice(4)); }catch(e){ return null; } }).filter(Boolean);
+    const last=mets[mets.length-1];
+    const ins=ids.map((id,i)=>el("input",{type:"number",inputMode:"numeric",placeholder:labs[i]}));
+    const sv=el("button",{className:"primary sm",textContent:"数字を記録"});
+    sv.onclick=()=>{
+      const m={at:new Date().toISOString()};
+      ids.forEach((id,i)=>{ if(ins[i].value!=="") m[id]=Number(ins[i].value); });
+      if(Object.keys(m).length<2){ msg.textContent="数字を1つ以上入れてください"; return; }
+      act(()=>ghApi("/issues/"+it.n+"/comments",{method:"POST",body:{body:"【成績】"+JSON.stringify(m)}}),"記録しました");
+    };
+    const lastTxt=last?("最新："+labs.map((l,i)=>(ids[i] in last)?l+" "+last[ids[i]]:"").filter(Boolean).join("／")+"（"+fmtS(last.at)+"）"):"数字はまだありません";
+    wrap.append(el("div",{className:"item"},head(it),el("div",{className:"t"},it.d.text||""),el("div",{className:"note"},lastTxt),el("div",{className:"nums"},...ins),el("div",{className:"inline",style:"margin-top:8px"},sv)));
+  }
+}
+
 async function loadQuestions(){
   try{ const c=await caches.open("nagi-q"); const r=await c.match("./latest-questions.json"); return r?await r.json():null; }
   catch(e){ return null; }
@@ -156,7 +289,7 @@ function renderForm(){
   const list=$("#list"); list.replaceChildren();
   const wrap=el("div",{className:"form"});
   if(tab==="draft"){
-    wrap.append(el("div",{className:"privacy"},"保存先はこの端末のブラウザだけです。AIや社長以外には送信されません。AIに見せるには「チャット用にコピー」で貼り付けてください。"));
+    wrap.append(el("div",{className:"privacy"},"「承認待ちに送る」で、編集部の非公開メモ置き場に届き、「承認」タブで承認・却下・修正指示ができます。「この端末に保存」は端末の中だけ、「コピー」はチャットに貼る用です。"));
     const cat=el("select"); cat.append(...opts(CATS)); const fm=el("select"); fm.append(...opts(FORMS));
     const ta=el("textarea",{placeholder:"ここに投稿の下書きを書く"});
     const cnt=el("div",{className:"counter"}); const warn=el("div",{className:"warn"});
@@ -167,7 +300,18 @@ function renderForm(){
     const fmt=()=>"【下書き】\n区分: "+cat.value+"\n形式: "+fm.value+"\n本文:\n"+ta.value;
     save.onclick=()=>{if(!ta.value.trim())return;const a=LS.get("drafts");a.unshift({at:new Date().toISOString(),cat:cat.value,fm:fm.value,text:ta.value});LS.set("drafts",a);ta.value="";upd();renderForm()};
     cp.onclick=()=>copyText(fmt(),cp);
-    wrap.append(el("label",{},"区分"),cat,el("label",{},"形式"),fm,el("label",{},"本文"),ta,cnt,warn,el("div",{className:"inline"},save,cp));
+    const sched=el("input",{type:"datetime-local"});
+    const dMsg=el("div",{className:"warn"}); dMsg.textContent=flash; flash="";
+    const sendD=el("button",{className:"primary",textContent:"承認待ちに送る"});
+    sendD.onclick=async()=>{
+      if(!ta.value.trim()){dMsg.textContent="本文を書いてください";return;}
+      sendD.disabled=true; dMsg.textContent="送信中…";
+      try{
+        await createDraft({cat:cat.value,fm:fm.value,text:ta.value,sched:sched.value});
+        ta.value=""; flash="承認待ちに送りました。「承認」タブで確認できます"; renderForm();
+      }catch(e){ dMsg.textContent=e.message; sendD.disabled=false; }
+    };
+    wrap.append(el("label",{},"区分"),cat,el("label",{},"形式"),fm,el("label",{},"本文"),ta,cnt,warn,el("label",{},"投稿予定日時（任意）"),sched,el("div",{className:"inline",style:"margin-top:12px"},sendD,save,cp),dMsg);
     const saved=el("div",{className:"saved"});
     LS.get("drafts").forEach((d,i)=>{
       const b1=el("button",{className:"sm",textContent:"コピー"}),b2=el("button",{className:"sm",textContent:"削除"});
@@ -242,9 +386,11 @@ function renderForm(){
 }
 
 function render(){
-  const isForm=(tab==='draft'||tab==='memo');
+  const isOps=(tab==='review'||tab==='plan'||tab==='stats');
+  const isForm=(tab==='draft'||tab==='memo'||isOps);
   document.querySelector('.clock').style.display=isForm?'none':'';
   $('#stats').style.display=isForm?'none':'';
+  if(isOps){renderOps();return;}
   if(isForm){renderForm();return;}
   const now = nowDate();
   $("#now").textContent = fmt(now).replace(/\d+:\d+$/,"") + "（この日の終わり）";
@@ -294,7 +440,7 @@ function setAccount(id){
   $("#phandle").textContent=a.handle; $("#pbio").textContent=a.bio;
   document.title="仮想SNS 模擬運用｜"+a.label;
   document.querySelectorAll("#switch button").forEach(b=>b.classList.toggle("on",b.dataset.id===id));
-  document.querySelector('.tab[data-tab="memo"]').style.display=a.memo?"":"none";
+  ["memo","review","plan","stats"].forEach(t=>{ document.querySelector('.tab[data-tab="'+t+'"]').style.display=a.memo?"":"none"; });
   document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("on",x.dataset.tab==="timeline"));
   posts=[]; render();
   fetch(a.file+"?t="+Date.now()).then(r=>r.json()).then(d=>{ if(acct===id){ posts=d; render(); } })
