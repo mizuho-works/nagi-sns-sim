@@ -133,6 +133,20 @@ function checkDraft(t){
   return w;
 }
 
+const TOKEN_KEY="ghtoken", ASK_REPO="mizuho-works/nagi-ask";
+let flash="";
+function getTok(){try{return localStorage.getItem(TOKEN_KEY)||""}catch(e){return ""}}
+async function sendIssue(title,body){
+  const t=getTok();
+  if(!t) throw new Error("先に下の「送信の設定」でトークンを入れてください");
+  const r=await fetch("https://api.github.com/repos/"+ASK_REPO+"/issues",{
+    method:"POST",
+    headers:{"Authorization":"Bearer "+t,"Accept":"application/vnd.github+json","Content-Type":"application/json"},
+    body:JSON.stringify({title,body})
+  });
+  if(!r.ok) throw new Error([401,403,404].includes(r.status)?"トークンが無効か、権限が足りません（"+r.status+"）":"送信に失敗しました（"+r.status+"）");
+}
+
 function renderForm(){
   const list=$("#list"); list.replaceChildren();
   const wrap=el("div",{className:"form"});
@@ -158,7 +172,7 @@ function renderForm(){
     });
     wrap.append(saved);
   } else {
-    wrap.append(el("div",{className:"privacy"},"1分で書けるメモ。お子さんの名前・生年月日・顔・園名・居住地は書かないでください。保存先はこの端末のブラウザだけです。AIに渡すには「チャット用にコピー」で貼り付けてください（LINEからの返信と並行で使えます）。"));
+    wrap.append(el("div",{className:"privacy"},"1分で書けるメモ。お子さんの名前・生年月日・顔・園名・居住地は書かないでください。「送信」を押すと、編集部の非公開メモ置き場に届きます（送信の設定が最初の1回だけ必要です）。「この端末に保存」は端末の中だけ、「コピー」はチャットに貼る用です。"));
     const who=el("select"); who.append(...opts(["上の子","下の子","自分","家"]));
     const what=el("textarea",{placeholder:"何があった／感じた（一言でOK）"}); what.style.minHeight="90px";
     const item=el("input",{type:"text",placeholder:"商品（あれば）"});
@@ -170,7 +184,26 @@ function renderForm(){
     const save=el("button",{className:"primary",textContent:"この端末に保存"}),cp=el("button",{textContent:"チャット用にコピー"});
     save.onclick=()=>{if(!what.value.trim())return;const a=LS.get("memos");a.unshift({at:new Date().toISOString(),text:fmt()});LS.set("memos",a);what.value="";item.value="";renderForm()};
     cp.onclick=()=>copyText(fmt(),cp);
-    wrap.append(el("label",{},"誰のこと"),who,el("label",{},"何があった"),what,el("label",{},"商品（任意）"),item,el("label",{},"結果"),res,el("label",{},"公開してよいか"),pubRow,el("div",{className:"inline",style:"margin-top:12px"},save,cp));
+    const send=el("button",{className:"primary",textContent:"送信（編集部へ）"}); const msg=el("div",{className:"warn"}); msg.textContent=flash; flash="";
+    send.onclick=async()=>{
+      if(!what.value.trim()){msg.textContent="「何があった」を一言書いてください";return;}
+      send.disabled=true; msg.textContent="送信中…";
+      try{
+        const body=fmt();
+        await sendIssue("【体験メモ】"+new Date().toLocaleDateString("ja-JP"),body);
+        const a=LS.get("memos"); a.unshift({at:new Date().toISOString(),text:body+"\n（送信済み）"}); LS.set("memos",a);
+        what.value=""; item.value=""; flash="送信しました。ありがとうございます"; renderForm();
+      }catch(e){ msg.textContent=e.message; send.disabled=false; }
+    };
+    wrap.append(el("label",{},"誰のこと"),who,el("label",{},"何があった"),what,el("label",{},"商品（任意）"),item,el("label",{},"結果"),res,el("label",{},"公開してよいか"),pubRow,el("div",{className:"inline",style:"margin-top:12px"},send,save,cp),msg);
+    const det=el("details",{style:"margin-top:16px"});
+    const st=el("div",{className:"note"}); st.textContent=getTok()?"送信の設定：済み（この端末だけに保存）":"送信の設定：未設定";
+    const tin=el("input",{type:"password",placeholder:"トークンを貼り付け",autocomplete:"off"});
+    const ts=el("button",{className:"sm",textContent:"保存"}),tc=el("button",{className:"sm",textContent:"削除"});
+    ts.onclick=()=>{ if(!tin.value.trim())return; try{localStorage.setItem(TOKEN_KEY,tin.value.trim())}catch(e){} renderForm(); };
+    tc.onclick=()=>{ try{localStorage.removeItem(TOKEN_KEY)}catch(e){} renderForm(); };
+    det.append(el("summary",{},"送信の設定（最初の1回だけ）"),el("div",{className:"note"},"トークンは、編集部の非公開メモ置き場にだけ書き込める鍵です。この端末のブラウザにだけ保存され、他の人に見せないでください。作り方はPCのClaudeに聞いてください。"),tin,el("div",{className:"inline",style:"margin-top:8px"},ts,tc),st);
+    wrap.append(det);
     const saved=el("div",{className:"saved"});
     LS.get("memos").forEach((m,i)=>{
       const b1=el("button",{className:"sm",textContent:"コピー"}),b2=el("button",{className:"sm",textContent:"削除"});
