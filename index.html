@@ -195,10 +195,10 @@ async function patchBody(it,patch){
 const fmtS=s=>{ if(!s) return ""; const d=new Date(s); return isNaN(d)?s:d.toLocaleString("ja-JP",{month:"numeric",day:"numeric",weekday:"short",hour:"2-digit",minute:"2-digit"}); };
 const nowLocal=()=>{ const d=new Date(); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,16); };
 function head(it){ return el("div",{className:"note"},"#"+it.n+"｜"+(it.d.cat||"")+"｜"+(it.d.fm||"")+"｜"+STATE_JA[it.state]+(it.d.sched?"｜予定 "+fmtS(it.d.sched):"")); }
-function section(wrap,title,items,build){
+function section(wrap,title,items,build,hideText){
   wrap.append(el("h3",{},title+"（"+items.length+"）"));
   if(!items.length){ wrap.append(el("div",{className:"note"},"なし")); return; }
-  items.forEach(it=>wrap.append(el("div",{className:"item"},head(it),el("div",{className:"t"},it.d.text||""),...build(it))));
+  items.forEach(it=>wrap.append(el("div",{className:"item"},head(it),...(hideText?[]:[el("div",{className:"t"},it.d.text||"")]),...build(it))));
 }
 async function renderOps(){
   const t0=tab;
@@ -224,9 +224,19 @@ function viewReview(wrap,items,act){
     ok.onclick=()=>act(()=>setState(it.n,"approved","【承認】"+(c()?" "+c():"")),"承認しました");
     fix.onclick=()=>{ if(!c()){ alert("修正してほしい点を書いてください"); return; } act(()=>setState(it.n,"needs-fix","【修正指示】 "+c()),"修正指示を送りました"); };
     ng.onclick=()=>act(()=>setState(it.n,"rejected","【却下】"+(c()?" "+c():"")),"却下しました");
-    const w=checkDraft(it.d.text||"");
-    return [...(w.length?[el("div",{className:"warn"},w.join("\n"))]:[]),cm,el("div",{className:"inline",style:"margin-top:8px"},ok,fix,ng)];
-  });
+    const ed=el("textarea"); ed.value=it.d.text||""; ed.style.minHeight="130px";
+    const svT=el("button",{className:"sm",textContent:"本文を保存"});
+    svT.onclick=()=>{
+      if(!ed.value.trim()) return;
+      act(async()=>{
+        await patchBody(it,{text:ed.value});
+        await ghApi("/issues/"+it.n+"/comments",{method:"POST",body:{body:"【本文修正】"}});
+        if(it.state==="needs-fix") await setState(it.n,"pending");
+      },"本文を保存しました");
+    };
+    const w=checkDraft(ed.value);
+    return [...(w.length?[el("div",{className:"warn"},w.join("\n"))]:[]),ed,el("div",{className:"inline",style:"margin-top:6px"},svT),cm,el("div",{className:"inline",style:"margin-top:8px"},ok,fix,ng)];
+  },true);
   section(wrap,"投稿待ち（承認済み）",items.filter(i=>i.state==="approved"),it=>{
     const when=el("input",{type:"datetime-local",value:it.d.sched||nowLocal()});
     const cp=el("button",{className:"sm",textContent:"本文をコピー"}),done=el("button",{className:"primary sm",textContent:"投稿した"}),undo=el("button",{className:"sm",textContent:"承認を取り消す"});
