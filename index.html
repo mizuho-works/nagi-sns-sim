@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>仮想SNS（なぎ）模擬運用</title>
+<title>仮想SNS 模擬運用</title>
 <style>
 :root{--bg:#fff;--fg:#101010;--sub:#777;--line:#e6e6e6;--card:#fff;--accent:#e0607e;--chip:#f3f3f3;--ok:#2e8b57;--warn:#c98a00;--stop:#8a8a8a}
 @media (prefers-color-scheme:dark){:root{--bg:#101010;--fg:#f3f3f3;--sub:#9a9a9a;--line:#2a2a2a;--card:#161616;--chip:#222}}
@@ -48,15 +48,19 @@ button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
 .saved .item{border-top:1px solid var(--line);padding:12px 0}
 .saved .item .t{white-space:pre-wrap;margin:4px 0}
 .sm{font-size:12px;padding:3px 10px}
+.switch{display:flex;gap:8px;padding:10px 0 0}
+.switch button{flex:1;border-radius:12px;padding:8px 6px;font-size:13px}
+.switch button.on{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
 </style>
 </head>
 <body>
 <div class="banner">シミュレーションです。実際の投稿ではありません（Threads・Instagram・ROOMには何も送信されません）</div>
 <div class="wrap">
+  <div class="switch" id="switch"></div>
   <section class="profile">
-    <div class="row"><div class="avatar">♡</div>
-      <div><div class="name">なぎ｜無駄買いしない可愛いもの</div><div class="handle">@m_nagi_note</div></div></div>
-    <p class="bio">可愛いものが好き。でも無駄買いはしたくない。
+    <div class="row"><div class="avatar" id="avatar">♡</div>
+      <div><div class="name" id="pname">なぎ｜無駄買いしない可愛いもの</div><div class="handle" id="phandle">@m_nagi_note</div></div></div>
+    <p class="bio" id="pbio">可愛いものが好き。でも無駄買いはしたくない。
 2児のママ｜子ども服・キッズ雑貨・暮らしの便利もの
 買ってよかった／買わなくてよかった、どっちも正直に。
 ※一部PRを含みます
@@ -87,7 +91,18 @@ button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
 <script>
 const STATUS = {approved:"承認済み（実）",queued:"検査済・承認待ち（承認された想定で表示）",review:"要確認",hold:"保留",waiting:"体験待ち",reserve:"控え（今期は予定なし）"};
 const SHOWN = ["approved","queued"];
-const START = new Date("2026-10-12T00:00");
+const ACCOUNTS = {
+  nagi:{label:"なぎ", file:"posts.json", start:"2026-10-12T00:00", pr:true, memo:true,
+    avatar:"♡", name:"なぎ｜無駄買いしない可愛いもの", handle:"@m_nagi_note",
+    bio:"可愛いものが好き。でも無駄買いはしたくない。\n2児のママ｜子ども服・キッズ雑貨・暮らしの便利もの\n買ってよかった／買わなくてよかった、どっちも正直に。\n※一部PRを含みます\n▼ROOMにまとめてます"},
+  kids:{label:"女の子服ニュース（別担当）", file:"posts_kids.json", start:"2026-10-10T00:00", pr:false, memo:false,
+    avatar:"☆", name:"プチプラ女の子服ニュース（仮）", handle:"@（未定）",
+    bio:"未就学の女の子の服を、税込2,900円以内で。\n新作・コラボを、出典つきで。\n1,000円台なら◎。\n※アフィリエイトなし／PRなし"}
+};
+let acct = "nagi";
+try{ const a=localStorage.getItem("acct"); if(ACCOUNTS[a]) acct=a; }catch(e){}
+if(ACCOUNTS[location.hash.slice(1)]) acct=location.hash.slice(1);
+let START = new Date(ACCOUNTS[acct].start);
 let posts = [], day = 0, tab = "timeline", timer = null;
 
 const $ = s => document.querySelector(s);
@@ -95,7 +110,8 @@ const fmt = d => d.toLocaleString("ja-JP",{month:"numeric",day:"numeric",weekday
 function nowDate(){ const d = new Date(START); d.setDate(d.getDate()+day); d.setHours(23,59); return d; }
 
 
-const LS={get(k){try{return JSON.parse(localStorage.getItem(k)||"[]")}catch(e){return []}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
+const lsKey=k=>acct==="nagi"?k:acct+":"+k;
+const LS={get(k){try{return JSON.parse(localStorage.getItem(lsKey(k))||"[]")}catch(e){return []}},set(k,v){try{localStorage.setItem(lsKey(k),JSON.stringify(v))}catch(e){}}};
 const NG=["絶対","必ず","治る","No.1","最安","誰でも","100%","効果がある"];
 function el(tag,props,...kids){const e=document.createElement(tag);Object.assign(e,props||{});kids.forEach(k=>e.append(k));return e;}
 function copyText(t,btn){const o=btn.textContent;navigator.clipboard.writeText(t).then(()=>{btn.textContent="コピーしました";setTimeout(()=>btn.textContent=o,1500)}).catch(()=>{window.prompt("コピーしてください",t)})}
@@ -107,7 +123,7 @@ function checkDraft(t){
   const w=[];
   if([...t].length>500)w.push("500文字を超えています（Threadsの上限）");
   const ng=NG.filter(x=>t.includes(x)); if(ng.length)w.push("根拠が必要な表現: "+ng.join("、")+"（法務チェック対象）");
-  if(/https?:\/\//.test(t)&&!/^\s*PR/.test(t))w.push("リンクがあります。ROOMリンク・商品を載せる投稿は冒頭に「PR」を入れる決まりです");
+  if(ACCOUNTS[acct].pr&&/https?:\/\//.test(t)&&!/^\s*PR/.test(t))w.push("リンクがあります。ROOMリンク・商品を載せる投稿は冒頭に「PR」を入れる決まりです");
   if(/\d{4}年\d{1,2}月\d{1,2}日/.test(t))w.push("生年月日のような表記があります（公開しないルール）");
   if(/保育園|幼稚園/.test(t)&&/(名|園名)/.test(t))w.push("園名が入っていないか確認してください");
   return w;
@@ -180,7 +196,7 @@ function render(){
   const items = (tab==="timeline" ? shown : stopped).slice().sort((a,b)=>new Date(b.at)-new Date(a.at));
   $("#list").innerHTML = items.length ? items.map(p=>`
     <article class="post">
-      <div class="meta"><b style="color:var(--fg)">なぎ</b><span>${fmt(new Date(p.at))}</span>
+      <div class="meta"><b style="color:var(--fg)">${ACCOUNTS[acct].name.split("｜")[0]}</b><span>${fmt(new Date(p.at))}</span>
         <span class="chip">${p.category}</span><span class="chip">${p.format}</span>
         <span class="s-${p.status}">● ${STATUS[p.status]}</span></div>
       <div class="text"></div>
@@ -208,8 +224,24 @@ document.querySelectorAll(".tab").forEach(t => t.onclick = () => {
   tab = t.dataset.tab; render();
 });
 
-fetch("posts.json").then(r=>r.json()).then(d=>{ posts = d; render(); })
-  .catch(()=>{ $("#list").innerHTML = '<div class="empty">posts.json を読み込めません。ローカルサーバー経由で開いてください</div>'; });
+function setAccount(id){
+  stop(); acct=id; day=0; tab="timeline"; location.hash=id;
+  try{localStorage.setItem("acct",id)}catch(e){}
+  const a=ACCOUNTS[id]; START=new Date(a.start);
+  $("#avatar").textContent=a.avatar; $("#pname").textContent=a.name;
+  $("#phandle").textContent=a.handle; $("#pbio").textContent=a.bio;
+  document.title="仮想SNS 模擬運用｜"+a.label;
+  document.querySelectorAll("#switch button").forEach(b=>b.classList.toggle("on",b.dataset.id===id));
+  document.querySelector('.tab[data-tab="memo"]').style.display=a.memo?"":"none";
+  document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("on",x.dataset.tab==="timeline"));
+  posts=[]; render();
+  fetch(a.file+"?t="+Date.now()).then(r=>r.json()).then(d=>{ if(acct===id){ posts=d; render(); } })
+    .catch(()=>{ $("#list").innerHTML = '<div class="empty">'+a.file+' を読み込めません。ローカルサーバー経由で開いてください</div>'; });
+}
+Object.entries(ACCOUNTS).forEach(([id,a])=>{
+  const b=el("button",{textContent:a.label}); b.dataset.id=id; b.onclick=()=>setAccount(id); $("#switch").append(b);
+});
+setAccount(acct);
 </script>
 </body>
 </html>
