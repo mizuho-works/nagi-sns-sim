@@ -147,6 +147,11 @@ async function sendIssue(title,body){
   if(!r.ok) throw new Error([401,403,404].includes(r.status)?"トークンが無効か、権限が足りません（"+r.status+"）":"送信に失敗しました（"+r.status+"）");
 }
 
+async function loadQuestions(){
+  try{ const c=await caches.open("nagi-q"); const r=await c.match("./latest-questions.json"); return r?await r.json():null; }
+  catch(e){ return null; }
+}
+
 function renderForm(){
   const list=$("#list"); list.replaceChildren();
   const wrap=el("div",{className:"form"});
@@ -173,6 +178,26 @@ function renderForm(){
     wrap.append(saved);
   } else {
     wrap.append(el("div",{className:"privacy"},"1分で書けるメモ。お子さんの名前・生年月日・顔・園名・居住地は書かないでください。「送信」を押すと、編集部の非公開メモ置き場に届きます（送信の設定が最初の1回だけ必要です）。「この端末に保存」は端末の中だけ、「コピー」はチャットに貼る用です。"));
+    const topMsg=el("div",{className:"warn"}); topMsg.textContent=flash; flash=""; wrap.append(topMsg);
+    const qbox=el("div",{className:"qbox"}); wrap.append(qbox);
+    loadQuestions().then(d=>{
+      if(!d||!d.questions||!d.questions.length){ qbox.append(el("div",{className:"note"},"今日の質問はまだありません。通知が届くと、ここに質問が出ます。")); return; }
+      const ans=d.questions.map(()=>{ const a=el("textarea",{placeholder:"一言でOK（空欄はパス）"}); a.style.minHeight="56px"; return a; });
+      const pubSel=el("select"); pubSel.append(...opts(["公開OK","ぼかして可","非公開"]));
+      const qs=el("button",{className:"primary",textContent:"回答を送信"}); const qm=el("div",{className:"warn"});
+      qs.onclick=async()=>{
+        qs.disabled=true; qm.textContent="送信中…";
+        try{
+          const body="【体験メモ（質問への回答）】\n"+d.questions.map((q,i)=>"Q"+(i+1)+": "+q+"\nA"+(i+1)+": "+(ans[i].value.trim()||"パス")).join("\n")+"\n公開: "+pubSel.value;
+          await sendIssue("【質問への回答】"+new Date().toLocaleDateString("ja-JP"),body);
+          const c=await caches.open("nagi-q"); await c.delete("./latest-questions.json");
+          flash="送信しました。ありがとうございます"; renderForm();
+        }catch(e){ qm.textContent=e.message; qs.disabled=false; }
+      };
+      qbox.append(el("label",{},"今日の質問（"+new Date(d.at).toLocaleDateString("ja-JP")+"）"));
+      d.questions.forEach((q,i)=>{ qbox.append(el("div",{className:"t"},(i+1)+". "+q),ans[i]); });
+      qbox.append(el("label",{},"公開してよいか"),pubSel,el("div",{className:"inline",style:"margin-top:8px"},qs),qm,el("hr"));
+    });
     const who=el("select"); who.append(...opts(["上の子","下の子","自分","家"]));
     const what=el("textarea",{placeholder:"何があった／感じた（一言でOK）"}); what.style.minHeight="90px";
     const item=el("input",{type:"text",placeholder:"商品（あれば）"});
