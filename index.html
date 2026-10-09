@@ -230,7 +230,7 @@ function viewReview(wrap,items,act){
       if(!ed.value.trim()) return;
       act(async()=>{
         await patchBody(it,{text:ed.value});
-        await ghApi("/issues/"+it.n+"/comments",{method:"POST",body:{body:"【本文修正】"}});
+        await ghApi("/issues/"+it.n+"/comments",{method:"POST",body:{body:"【本文修正】前の文:\n"+(it.d.text||"")}});
         if(it.state==="needs-fix") await setState(it.n,"pending");
       },"本文を保存しました");
     };
