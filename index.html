@@ -3,6 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#e0607e">
 <title>仮想SNS 模擬運用</title>
 <style>
 :root{--bg:#fff;--fg:#101010;--sub:#777;--line:#e6e6e6;--card:#fff;--accent:#e0607e;--chip:#f3f3f3;--ok:#2e8b57;--warn:#c98a00;--stop:#8a8a8a}
@@ -242,6 +246,11 @@ Object.entries(ACCOUNTS).forEach(([id,a])=>{
   const b=el("button",{textContent:a.label}); b.dataset.id=id; b.onclick=()=>setAccount(id); $("#switch").append(b);
 });
 setAccount(acct);
+if(new URLSearchParams(location.search).get("tab")==="memo"){
+  tab="memo";
+  document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("on",x.dataset.tab==="memo"));
+  render();
+}
 </script>
 </body>
 </html>

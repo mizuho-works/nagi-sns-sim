@@ -1,0 +1,13 @@
+{
+  "name": "なぎ編集部メモ",
+  "short_name": "なぎメモ",
+  "start_url": "./?tab=memo",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#e0607e",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
