@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>仮想SNS（なぎ）模擬運用</title>
+<style>
+:root{--bg:#fff;--fg:#101010;--sub:#777;--line:#e6e6e6;--card:#fff;--accent:#e0607e;--chip:#f3f3f3;--ok:#2e8b57;--warn:#c98a00;--stop:#8a8a8a}
+@media (prefers-color-scheme:dark){:root{--bg:#101010;--fg:#f3f3f3;--sub:#9a9a9a;--line:#2a2a2a;--card:#161616;--chip:#222}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.65 -apple-system,"Hiragino Sans","Yu Gothic",Meiryo,sans-serif}
+.wrap{max-width:600px;margin:0 auto;padding:0 16px 80px}
+.banner{background:var(--chip);color:var(--sub);font-size:12px;text-align:center;padding:8px 12px;border-bottom:1px solid var(--line)}
+.profile{padding:20px 0 12px;border-bottom:1px solid var(--line)}
+.row{display:flex;gap:14px;align-items:center}
+.avatar{width:64px;height:64px;border-radius:50%;background:linear-gradient(135deg,#f6c1cf,#e0607e);display:grid;place-items:center;color:#fff;font-size:26px;flex:none}
+.name{font-weight:700;font-size:17px}.handle{color:var(--sub);font-size:13px}
+.bio{margin:12px 0 0;white-space:pre-wrap}
+.clock{margin:16px 0;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--card)}
+.clock b{font-size:14px}
+.clock input[type=range]{width:100%;accent-color:var(--accent)}
+.clock .btns{display:flex;gap:8px;margin-top:6px;flex-wrap:wrap}
+button{font:inherit;border:1px solid var(--line);background:var(--card);color:var(--fg);padding:6px 12px;border-radius:999px;cursor:pointer}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.tabs{display:flex;border-bottom:1px solid var(--line);margin-top:8px}
+.tab{flex:1;text-align:center;padding:12px 0;color:var(--sub);cursor:pointer;border-bottom:2px solid transparent}
+.tab.on{color:var(--fg);border-color:var(--fg);font-weight:600}
+.post{padding:16px 0;border-bottom:1px solid var(--line)}
+.meta{display:flex;gap:8px;align-items:center;color:var(--sub);font-size:12px;flex-wrap:wrap}
+.text{white-space:pre-wrap;margin:6px 0 8px;word-break:break-word}
+.chip{background:var(--chip);border-radius:999px;padding:1px 8px;font-size:11px}
+.s-approved{color:var(--ok)}.s-queued{color:var(--accent)}.s-review{color:var(--warn)}.s-hold,.s-waiting,.s-reserve{color:var(--stop)}
+.note{font-size:12px;color:var(--sub)}
+.empty{color:var(--sub);padding:40px 0;text-align:center}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:12px 0}
+.stat{background:var(--chip);border-radius:10px;padding:8px;text-align:center;font-size:12px;color:var(--sub)}
+.stat b{display:block;font-size:20px;color:var(--fg)}
+
+.form{padding:16px 0}
+.form label{display:block;font-size:12px;color:var(--sub);margin:12px 0 4px}
+.form textarea,.form input[type=text],.form select{width:100%;font:inherit;color:var(--fg);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 10px}
+.form textarea{resize:vertical;min-height:140px}
+.form .inline{display:flex;gap:12px;flex-wrap:wrap}
+.form .inline label{display:flex;align-items:center;gap:4px;margin:0;color:var(--fg);font-size:14px}
+.counter{font-size:12px;color:var(--sub);text-align:right}.counter.over{color:#d33;font-weight:700}
+.warn{font-size:12px;color:var(--warn);margin:6px 0;white-space:pre-wrap}
+.privacy{font-size:12px;color:var(--sub);background:var(--chip);border-radius:10px;padding:8px 10px;margin-bottom:8px}
+.saved .item{border-top:1px solid var(--line);padding:12px 0}
+.saved .item .t{white-space:pre-wrap;margin:4px 0}
+.sm{font-size:12px;padding:3px 10px}
+</style>
+</head>
+<body>
+<div class="banner">シミュレーションです。実際の投稿ではありません（Threads・Instagram・ROOMには何も送信されません）</div>
+<div class="wrap">
+  <section class="profile">
+    <div class="row"><div class="avatar">♡</div>
+      <div><div class="name">なぎ｜無駄買いしない可愛いもの</div><div class="handle">@m_nagi_note</div></div></div>
+    <p class="bio">可愛いものが好き。でも無駄買いはしたくない。
+2児のママ｜子ども服・キッズ雑貨・暮らしの便利もの
+買ってよかった／買わなくてよかった、どっちも正直に。
+※一部PRを含みます
+▼ROOMにまとめてます</p>
+  </section>
+
+  <section class="clock">
+    <b>模擬の現在日時：<span id="now"></span></b>
+    <input id="slider" type="range" min="0" max="13" value="0">
+    <div class="btns">
+      <button class="primary" id="next">次の投稿予定まで進める</button>
+      <button id="reset">最初に戻す</button>
+      <button id="auto">自動再生</button>
+    </div>
+  </section>
+
+  <div class="stats" id="stats"></div>
+
+  <div class="tabs">
+    <div class="tab on" data-tab="timeline">タイムライン</div>
+    <div class="tab" data-tab="stopped">止まっている投稿</div>
+    <div class="tab" data-tab="draft">下書き</div>
+    <div class="tab" data-tab="memo">体験メモ</div>
+  </div>
+  <div id="list"></div>
+</div>
+
+<script>
+const STATUS = {approved:"承認済み（実）",queued:"検査済・承認待ち（承認された想定で表示）",review:"要確認",hold:"保留",waiting:"体験待ち",reserve:"控え（今期は予定なし）"};
+const SHOWN = ["approved","queued"];
+const START = new Date("2026-10-12T00:00");
+let posts = [], day = 0, tab = "timeline", timer = null;
+
+const $ = s => document.querySelector(s);
+const fmt = d => d.toLocaleString("ja-JP",{month:"numeric",day:"numeric",weekday:"short",hour:"2-digit",minute:"2-digit"});
+function nowDate(){ const d = new Date(START); d.setDate(d.getDate()+day); d.setHours(23,59); return d; }
+
+
+const LS={get(k){try{return JSON.parse(localStorage.getItem(k)||"[]")}catch(e){return []}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
+const NG=["絶対","必ず","治る","No.1","最安","誰でも","100%","効果がある"];
+function el(tag,props,...kids){const e=document.createElement(tag);Object.assign(e,props||{});kids.forEach(k=>e.append(k));return e;}
+function copyText(t,btn){const o=btn.textContent;navigator.clipboard.writeText(t).then(()=>{btn.textContent="コピーしました";setTimeout(()=>btn.textContent=o,1500)}).catch(()=>{window.prompt("コピーしてください",t)})}
+function opts(arr){return arr.map(a=>{const o=document.createElement("option");o.textContent=a;return o})}
+const CATS=["子ども服・可愛いもの","暮らし","流行・先取り","趣味・雑貨"];
+const FORMS=["独り言・共感","質問","買う前チェック","割り切り","気づき","まとめ・ふりかえり","買わない系","ROOM導線","その他"];
+
+function checkDraft(t){
+  const w=[];
+  if([...t].length>500)w.push("500文字を超えています（Threadsの上限）");
+  const ng=NG.filter(x=>t.includes(x)); if(ng.length)w.push("根拠が必要な表現: "+ng.join("、")+"（法務チェック対象）");
+  if(/https?:\/\//.test(t)&&!/^\s*PR/.test(t))w.push("リンクがあります。ROOMリンク・商品を載せる投稿は冒頭に「PR」を入れる決まりです");
+  if(/\d{4}年\d{1,2}月\d{1,2}日/.test(t))w.push("生年月日のような表記があります（公開しないルール）");
+  if(/保育園|幼稚園/.test(t)&&/(名|園名)/.test(t))w.push("園名が入っていないか確認してください");
+  return w;
+}
+
+function renderForm(){
+  const list=$("#list"); list.replaceChildren();
+  const wrap=el("div",{className:"form"});
+  if(tab==="draft"){
+    wrap.append(el("div",{className:"privacy"},"保存先はこの端末のブラウザだけです。AIや社長以外には送信されません。AIに見せるには「チャット用にコピー」で貼り付けてください。"));
+    const cat=el("select"); cat.append(...opts(CATS)); const fm=el("select"); fm.append(...opts(FORMS));
+    const ta=el("textarea",{placeholder:"ここに投稿の下書きを書く"});
+    const cnt=el("div",{className:"counter"}); const warn=el("div",{className:"warn"});
+    const upd=()=>{const n=[...ta.value].length;cnt.textContent=n+" / 500";cnt.className="counter"+(n>500?" over":"");warn.textContent=checkDraft(ta.value).join("\n")};
+    ta.oninput=upd; upd();
+    const save=el("button",{className:"primary",textContent:"この端末に保存"});
+    const cp=el("button",{textContent:"チャット用にコピー"});
+    const fmt=()=>"【下書き】\n区分: "+cat.value+"\n形式: "+fm.value+"\n本文:\n"+ta.value;
+    save.onclick=()=>{if(!ta.value.trim())return;const a=LS.get("drafts");a.unshift({at:new Date().toISOString(),cat:cat.value,fm:fm.value,text:ta.value});LS.set("drafts",a);ta.value="";upd();renderForm()};
+    cp.onclick=()=>copyText(fmt(),cp);
+    wrap.append(el("label",{},"区分"),cat,el("label",{},"形式"),fm,el("label",{},"本文"),ta,cnt,warn,el("div",{className:"inline"},save,cp));
+    const saved=el("div",{className:"saved"});
+    LS.get("drafts").forEach((d,i)=>{
+      const b1=el("button",{className:"sm",textContent:"コピー"}),b2=el("button",{className:"sm",textContent:"削除"});
+      b1.onclick=()=>copyText("【下書き】\n区分: "+d.cat+"\n形式: "+d.fm+"\n本文:\n"+d.text,b1);
+      b2.onclick=()=>{const a=LS.get("drafts");a.splice(i,1);LS.set("drafts",a);renderForm()};
+      saved.append(el("div",{className:"item"},el("div",{className:"note"},new Date(d.at).toLocaleString("ja-JP")+"｜"+d.cat+"｜"+d.fm),el("div",{className:"t"},d.text),el("div",{className:"inline"},b1,b2)));
+    });
+    wrap.append(saved);
+  } else {
+    wrap.append(el("div",{className:"privacy"},"1分で書けるメモ。お子さんの名前・生年月日・顔・園名・居住地は書かないでください。保存先はこの端末のブラウザだけです。AIに渡すには「チャット用にコピー」で貼り付けてください（LINEからの返信と並行で使えます）。"));
+    const who=el("select"); who.append(...opts(["上の子","下の子","自分","家"]));
+    const what=el("textarea",{placeholder:"何があった／感じた（一言でOK）"}); what.style.minHeight="90px";
+    const item=el("input",{type:"text",placeholder:"商品（あれば）"});
+    const res=el("select"); res.append(...opts(["良い","微妙","買わなかった","迷ってる","困っている","その他"]));
+    const pubs=["公開OK","ぼかして可","非公開"]; let pub="公開OK";
+    const pubRow=el("div",{className:"inline"});
+    pubs.forEach(p=>{const r=el("input",{type:"radio",name:"pub",checked:p===pub});r.onchange=()=>pub=p;pubRow.append(el("label",{},r,p))});
+    const fmt=()=>"【体験メモ】\n誰: "+who.value+"\n何があった: "+what.value+"\n商品: "+item.value+"\n結果: "+res.value+"\n公開: "+pub;
+    const save=el("button",{className:"primary",textContent:"この端末に保存"}),cp=el("button",{textContent:"チャット用にコピー"});
+    save.onclick=()=>{if(!what.value.trim())return;const a=LS.get("memos");a.unshift({at:new Date().toISOString(),text:fmt()});LS.set("memos",a);what.value="";item.value="";renderForm()};
+    cp.onclick=()=>copyText(fmt(),cp);
+    wrap.append(el("label",{},"誰のこと"),who,el("label",{},"何があった"),what,el("label",{},"商品（任意）"),item,el("label",{},"結果"),res,el("label",{},"公開してよいか"),pubRow,el("div",{className:"inline",style:"margin-top:12px"},save,cp));
+    const saved=el("div",{className:"saved"});
+    LS.get("memos").forEach((m,i)=>{
+      const b1=el("button",{className:"sm",textContent:"コピー"}),b2=el("button",{className:"sm",textContent:"削除"});
+      b1.onclick=()=>copyText(m.text,b1);
+      b2.onclick=()=>{const a=LS.get("memos");a.splice(i,1);LS.set("memos",a);renderForm()};
+      saved.append(el("div",{className:"item"},el("div",{className:"note"},new Date(m.at).toLocaleString("ja-JP")),el("div",{className:"t"},m.text),el("div",{className:"inline"},b1,b2)));
+    });
+    wrap.append(saved);
+  }
+  list.append(wrap);
+}
+
+function render(){
+  const isForm=(tab==='draft'||tab==='memo');
+  document.querySelector('.clock').style.display=isForm?'none':'';
+  $('#stats').style.display=isForm?'none':'';
+  if(isForm){renderForm();return;}
+  const now = nowDate();
+  $("#now").textContent = fmt(now).replace(/\d+:\d+$/,"") + "（この日の終わり）";
+  $("#slider").value = day;
+  const shown = posts.filter(p => SHOWN.includes(p.status) && new Date(p.at) <= now);
+  const stopped = posts.filter(p => !SHOWN.includes(p.status) && new Date(p.at) <= now);
+  $("#stats").innerHTML =
+    `<div class="stat"><b>${shown.length}</b>模擬投稿済み</div>`+
+    `<div class="stat"><b>${stopped.length}</b>止まっている</div>`+
+    `<div class="stat"><b>${posts.filter(p=>new Date(p.at)>now).length}</b>これから</div>`;
+  const items = (tab==="timeline" ? shown : stopped).slice().sort((a,b)=>new Date(b.at)-new Date(a.at));
+  $("#list").innerHTML = items.length ? items.map(p=>`
+    <article class="post">
+      <div class="meta"><b style="color:var(--fg)">なぎ</b><span>${fmt(new Date(p.at))}</span>
+        <span class="chip">${p.category}</span><span class="chip">${p.format}</span>
+        <span class="s-${p.status}">● ${STATUS[p.status]}</span></div>
+      <div class="text"></div>
+      <div class="note">${p.id}｜体験・出典: ${p.exp}｜検査: ${p.lane}｜${p.note}</div>
+    </article>`).join("") : `<div class="empty">${tab==="timeline"?"まだ投稿はありません":"止まっている投稿はありません"}</div>`;
+  document.querySelectorAll(".post .text").forEach((el,i)=>{ el.textContent = items[i].text; });
+}
+
+$("#slider").oninput = e => { day = +e.target.value; render(); };
+$("#next").onclick = () => {
+  const now = nowDate();
+  const nxt = posts.find(p => new Date(p.at) > now && SHOWN.includes(p.status));
+  if(!nxt) return;
+  day = Math.floor((new Date(nxt.at.slice(0,10)+"T00:00") - START)/86400000); render();
+};
+$("#reset").onclick = () => { day = 0; stop(); render(); };
+function stop(){ clearInterval(timer); timer = null; $("#auto").textContent = "自動再生"; }
+$("#auto").onclick = () => {
+  if(timer) return stop();
+  $("#auto").textContent = "停止";
+  timer = setInterval(()=>{ if(day>=13) return stop(); day++; render(); }, 1200);
+};
+document.querySelectorAll(".tab").forEach(t => t.onclick = () => {
+  document.querySelectorAll(".tab").forEach(x=>x.classList.remove("on")); t.classList.add("on");
+  tab = t.dataset.tab; render();
+});
+
+fetch("posts.json").then(r=>r.json()).then(d=>{ posts = d; render(); })
+  .catch(()=>{ $("#list").innerHTML = '<div class="empty">posts.json を読み込めません。ローカルサーバー経由で開いてください</div>'; });
+</script>
+</body>
+</html>
