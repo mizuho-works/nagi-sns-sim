@@ -194,7 +194,7 @@ async function patchBody(it,patch){
 }
 const fmtS=s=>{ if(!s) return ""; const d=new Date(s); return isNaN(d)?s:d.toLocaleString("ja-JP",{month:"numeric",day:"numeric",weekday:"short",hour:"2-digit",minute:"2-digit"}); };
 const nowLocal=()=>{ const d=new Date(); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,16); };
-function head(it){ return el("div",{className:"note"},"#"+it.n+"｜"+(it.d.cat||"")+"｜"+(it.d.fm||"")+"｜"+STATE_JA[it.state]+(it.d.sched?"｜予定 "+fmtS(it.d.sched):"")); }
+function head(it){ return el("div",{className:"note"},"#"+it.n+"｜"+(it.d.cat||"")+"｜"+(it.d.fm||"")+(it.d.pat?"｜型:"+it.d.pat:"")+"｜"+STATE_JA[it.state]+(it.d.sched?"｜予定 "+fmtS(it.d.sched):"")); }
 function section(wrap,title,items,build,hideText){
   wrap.append(el("h3",{},title+"（"+items.length+"）"));
   if(!items.length){ wrap.append(el("div",{className:"note"},"なし")); return; }
@@ -295,6 +295,35 @@ async function loadQuestions(){
   catch(e){ return null; }
 }
 
+// ---- 型から組み立てる（AIなし。空欄を埋めると下書きの骨組みになる） ----
+const LJ=(...a)=>a.filter(x=>x&&String(x).trim()).join("\n");
+const PATTERNS=[
+  {name:"会話劇＋一言オチ",guide:"状況の見出し → 会話 → 最後に地の文で一言。オチは4種：ツッコミ／一行の感謝やまとめ／たとえツッコミ／「ほっこりした」と素直に。",
+   fields:[{key:"scene",label:"状況の見出し",ph:"例：保育園前にお着替えする2歳児"},{key:"talk",label:"会話（覚えている範囲。1行1セリフ）",ph:"子「…」\n私「…」",multi:true},{key:"ochi",label:"最後の一言（オチ・感想）",ph:"例：はい、私が負けました"}],
+   build:v=>LJ(v.scene,v.talk,v.ochi)},
+  {name:"ボケとツッコミの連鎖",guide:"周りがボケて、私が短く突っ込む。ツッコミは短く何度か重ねる。",
+   fields:[{key:"scene",label:"状況の見出し",ph:"例：実家で遊ぶ2歳児"},{key:"talk",label:"ボケとツッコミ（1行1セリフ、交互に）",ph:"父「…」\n私「何でやねん」",multi:true},{key:"ochi",label:"最後の一言",ph:"例：決まってんだろ"}],
+   build:v=>LJ(v.scene,v.talk,v.ochi)},
+  {name:"敗北宣言→急な丁寧語→括弧で種明かし",guide:"子の一撃に親が負けを認め、急に丁寧語で持ち上げ、括弧で現実の事情を明かす。",
+   fields:[{key:"scene",label:"状況の見出し",ph:"例：出かける前の着替え"},{key:"talk",label:"子とのやり取り（1行1セリフ）",ph:"子「…」\n私「…」",multi:true},{key:"lose",label:"私の敗北宣言",ph:"例：はい、私が間違ってました"},{key:"polite",label:"急に丁寧語で持ち上げる一文",ph:"例：あなたは世界一可愛いです"},{key:"paren",label:"括弧の中の現実の事情",ph:"例：洗濯中なので他に服がない"}],
+   build:v=>LJ(v.scene,v.talk,v.lose,v.polite+(v.paren?"（"+v.paren+"）":""))},
+  {name:"感動の寸止め→理不尽で落とす",guide:"感動しかけたところで台無しになり、「それでこそ」と認めて、最初の小道具に戻って締める。",
+   fields:[{key:"scene",label:"状況の見出し",ph:"例：運動会の帰り道"},{key:"touch",label:"感動しかけた出来事",ph:"例：メダルを私の首にかけてくれた"},{key:"ruin",label:"台無しになる出来事",ph:"例：やっぱり返してと取り返された"},{key:"accept",label:"「それでこそ」の一言",ph:"例：うん、それでこそ君だよ"},{key:"callback",label:"最初に出した物・言葉に戻る一文",ph:"例：そんな君への金メダルだよ",},],
+   build:v=>LJ(v.scene,v.touch,v.ruin,v.accept,v.callback)},
+  {name:"ほっこりで終わる",guide:"相手の親切や子の一言で、素直な気持ちを短く書いて終わる。",
+   fields:[{key:"scene",label:"状況の見出し",ph:"例：風邪から復帰した日の職場"},{key:"act",label:"相手の言動（セリフがあれば）",ph:"「…」",multi:true},{key:"feel",label:"素直な気持ち（短く）",ph:"例：ほっこりした。頑張れそう"}],
+   build:v=>LJ(v.scene,v.act,v.feel)},
+  {name:"長い一文の伏線回収",guide:"1文で状況を積み重ね、最後に「それが今の〜です」と落とす。",
+   fields:[{key:"pre",label:"状況を積み重ねる1文（〜したのが、で止める）",ph:"例：職場の飲み会で〜と答えたのが",multi:true},{key:"fall",label:"落ち（〜です）",ph:"例：今の夫です"}],
+   build:v=>(v.pre||"")+(v.fall||"")},
+  {name:"オチなし宣言",guide:"山場のない話は、自分から「オチなし」と言い切る。",
+   fields:[{key:"story",label:"出来事",ph:"例：今日、子どもが〜した",multi:true},{key:"decl",label:"オチなし宣言",ph:"例：大したオチはありません"}],
+   build:v=>LJ(v.story,v.decl)},
+  {name:"気持ち＋質問で閉じる（自分の文体）",guide:"出来事 → 気持ちとその理由 → 読者への質問。自分の言葉を土台にした型。",
+   fields:[{key:"scene",label:"出来事",ph:"例：衣替えしようとして余計にぐちゃぐちゃになった",multi:true},{key:"why",label:"気持ちとその理由",ph:"例：まだ暑い日もあって、どこまで出すか迷う"},{key:"q",label:"読者への質問",ph:"例：みんなはどうしてる？"}],
+   build:v=>LJ(v.scene,v.why,v.q)}
+];
+
 function renderForm(){
   const list=$("#list"); list.replaceChildren();
   const wrap=el("div",{className:"form"});
@@ -305,6 +334,29 @@ function renderForm(){
     const cnt=el("div",{className:"counter"}); const warn=el("div",{className:"warn"});
     const upd=()=>{const n=[...ta.value].length;cnt.textContent=n+" / 500";cnt.className="counter"+(n>500?" over":"");warn.textContent=checkDraft(ta.value).join("\n")};
     ta.oninput=upd; upd();
+    let pat="";
+    const patBox=el("details",{style:"margin:8px 0 12px"});
+    const sel=el("select"); sel.append(...opts(["（型を選ぶ）",...PATTERNS.map(p=>p.name)]));
+    const guide=el("div",{className:"note"}); const fieldsBox=el("div");
+    sel.onchange=()=>{
+      fieldsBox.replaceChildren(); guide.textContent="";
+      const p=PATTERNS.find(x=>x.name===sel.value); if(!p) return;
+      guide.textContent=p.guide;
+      const inputs=p.fields.map(f=>{
+        const inp=f.multi?el("textarea",{placeholder:f.ph}):el("input",{type:"text",placeholder:f.ph});
+        if(f.multi) inp.style.minHeight="72px";
+        fieldsBox.append(el("label",{},f.label),inp);
+        return [f,inp];
+      });
+      const mk=el("button",{className:"sm primary",textContent:"骨組みを下書きに入れる",style:"margin-top:10px"});
+      mk.onclick=()=>{
+        const vals={}; inputs.forEach(([f,i])=>{ vals[f.key]=i.value.trim(); });
+        if(ta.value.trim() && !confirm("いまの本文を、骨組みで置き換えます。よいですか？")) return;
+        ta.value=p.build(vals); pat=p.name; upd();
+      };
+      fieldsBox.append(mk);
+    };
+    patBox.append(el("summary",{},"型から組み立てる（空欄を埋めると骨組みができます）"),el("div",{className:"note"},"セリフ・オチは、実際にあったことだけを書いてください。覚えていない部分は、空欄でOKです。"),sel,guide,fieldsBox);
     const save=el("button",{className:"primary",textContent:"この端末に保存"});
     const cp=el("button",{textContent:"チャット用にコピー"});
     const fmt=()=>"【下書き】\n区分: "+cat.value+"\n形式: "+fm.value+"\n本文:\n"+ta.value;
@@ -317,11 +369,11 @@ function renderForm(){
       if(!ta.value.trim()){dMsg.textContent="本文を書いてください";return;}
       sendD.disabled=true; dMsg.textContent="送信中…";
       try{
-        await createDraft({cat:cat.value,fm:fm.value,text:ta.value,sched:sched.value});
+        await createDraft({cat:cat.value,fm:fm.value,text:ta.value,sched:sched.value,pat});
         ta.value=""; flash="承認待ちに送りました。「承認」タブで確認できます"; renderForm();
       }catch(e){ dMsg.textContent=e.message; sendD.disabled=false; }
     };
-    wrap.append(el("label",{},"区分"),cat,el("label",{},"形式"),fm,el("label",{},"本文"),ta,cnt,warn,el("label",{},"投稿予定日時（任意）"),sched,el("div",{className:"inline",style:"margin-top:12px"},sendD,save,cp),dMsg);
+    wrap.append(patBox,el("label",{},"区分"),cat,el("label",{},"形式"),fm,el("label",{},"本文"),ta,cnt,warn,el("label",{},"投稿予定日時（任意）"),sched,el("div",{className:"inline",style:"margin-top:12px"},sendD,save,cp),dMsg);
     const saved=el("div",{className:"saved"});
     LS.get("drafts").forEach((d,i)=>{
       const b1=el("button",{className:"sm",textContent:"コピー"}),b2=el("button",{className:"sm",textContent:"削除"});
